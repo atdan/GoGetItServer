@@ -12,7 +12,6 @@ import android.support.design.widget.Snackbar;
 import android.support.v7.app.AlertDialog;
 import android.support.v7.widget.LinearLayoutManager;
 import android.support.v7.widget.RecyclerView;
-import android.view.ContextMenu;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.support.design.widget.NavigationView;
@@ -29,12 +28,18 @@ import android.widget.Toast;
 import com.example.root.gogetitserver.common.Common;
 import com.example.root.gogetitserver.interfaces.ItemClickListener;
 import com.example.root.gogetitserver.model.Category;
+import com.example.root.gogetitserver.model.Token;
 import com.example.root.gogetitserver.viewHolder.MenuViewHolder;
 import com.firebase.ui.database.FirebaseRecyclerAdapter;
 import com.google.android.gms.tasks.OnFailureListener;
 import com.google.android.gms.tasks.OnSuccessListener;
+import com.google.firebase.database.DataSnapshot;
+import com.google.firebase.database.DatabaseError;
 import com.google.firebase.database.DatabaseReference;
 import com.google.firebase.database.FirebaseDatabase;
+import com.google.firebase.database.Query;
+import com.google.firebase.database.ValueEventListener;
+import com.google.firebase.iid.FirebaseInstanceId;
 import com.google.firebase.storage.FirebaseStorage;
 import com.google.firebase.storage.OnProgressListener;
 import com.google.firebase.storage.StorageReference;
@@ -45,6 +50,8 @@ import com.squareup.picasso.Picasso;
 import java.util.UUID;
 
 import info.hoang8f.widget.FButton;
+
+import static com.example.root.gogetitserver.common.Common.PICK_IMAGE_REQUEST;
 
 public class HomeActivity extends AppCompatActivity
         implements NavigationView.OnNavigationItemSelectedListener {
@@ -68,7 +75,6 @@ public class HomeActivity extends AppCompatActivity
     Category newCategory;
 
     Uri saveUri;
-    private final int PICK_IMAGE_REQUEST = 71;
 
     DrawerLayout drawer;
 
@@ -120,7 +126,23 @@ public class HomeActivity extends AppCompatActivity
         recyclerView_menu.setLayoutManager(layoutManager);
 
         loadMenu();
+
+        //send Token
+        updateToken(FirebaseInstanceId.getInstance().getToken());
+
+
     }
+
+    private void updateToken(String token) {
+
+        FirebaseDatabase db = FirebaseDatabase.getInstance();
+        DatabaseReference tokensReference =  db.getReference("Tokens");
+
+        Token data = new Token(token,true); //true because this token is from server
+
+        tokensReference.child(Common.current_user.getPhone()).setValue(data);
+    }
+
 
     private void showDialog() {
         AlertDialog.Builder alertDialog = new AlertDialog.Builder(HomeActivity.this);
@@ -255,6 +277,10 @@ public class HomeActivity extends AppCompatActivity
                     @Override
                     public void onClick(View view, int position, boolean isLongClick) {
 
+                        //send category id and start new activity
+                        Intent foodList = new Intent(HomeActivity.this, FoodListActivity.class);
+                        foodList.putExtra("CategoryId",adapter.getRef(position).getKey());
+                        startActivity(foodList);
                     }
                 });
                 viewHolder.txtMenuName.setText(model.getName());
@@ -305,6 +331,11 @@ public class HomeActivity extends AppCompatActivity
         // Handle navigation view item clicks here.
         int id = item.getItemId();
 
+        if (id == R.id.nav_orders){
+            Intent orders = new Intent(HomeActivity.this,OrderStatusActivity.class);
+            startActivity(orders);
+        }
+
 
 
         DrawerLayout drawer = (DrawerLayout) findViewById(R.id.drawer_layout);
@@ -320,10 +351,40 @@ public class HomeActivity extends AppCompatActivity
 
         if (item.getTitle().equals(Common.UPDATE)){
             showUpdateDialog(adapter.getRef(item.getOrder()).getKey(),adapter.getItem(item.getOrder()));
+        }else if (item.getTitle().equals(Common.DELETE)){
+            deleteCategory(adapter.getRef(item.getOrder()).getKey());
+
         }
 
         return super.onContextItemSelected(item);
     }
+
+    private void deleteCategory(String key) {
+
+        //get all foods in a food category and delete them when we delete the category
+        DatabaseReference foods = database.getReference("Foods");
+        Query foodsInCategory = foods.orderByChild("menuId").equalTo(key);
+        foodsInCategory.addListenerForSingleValueEvent(new ValueEventListener() {
+            @Override
+            public void onDataChange(@NonNull DataSnapshot dataSnapshot) {
+                for (DataSnapshot postSnapshot: dataSnapshot.getChildren()){
+                    postSnapshot.getRef().removeValue();
+                }
+            }
+
+            @Override
+            public void onCancelled(@NonNull DatabaseError databaseError) {
+
+            }
+        });
+
+
+
+        categories.child(key).removeValue();
+        Toast.makeText(this, "Item Deleted", Toast.LENGTH_SHORT).show();
+    }
+
+
 
     private void showUpdateDialog(final String key, final Category item) {
         AlertDialog.Builder alertDialog = new AlertDialog.Builder(HomeActivity.this);
